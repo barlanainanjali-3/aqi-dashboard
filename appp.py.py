@@ -7,8 +7,6 @@ Original file is located at
     https://colab.research.google.com/drive/1gmk2pCLNjpQUMKhDxZF3YmlL8m2HnvLw
 """
 
-!pip install streamlit PyPDF2
-
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
