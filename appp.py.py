@@ -6,6 +6,11 @@ import re
 import math
 import io
 
+# Import for OCR
+from PIL import Image
+from pdf2image import convert_from_path
+import pytesseract
+
 # --- CPCB AQI CALCULATION LOGIC ---
 aqi_breakpoints = {
     'PM10': [{'limit': 50, 'aqi': 50}, {'limit': 100, 'aqi': 100}, {'limit': 250, 'aqi': 200}, {'limit': 350, 'aqi': 300}, {'limit': 430, 'aqi': 400}, {'limit': 1000, 'aqi': 500}],
@@ -190,10 +195,28 @@ def process_data_with_aqi(data):
 
 # --- PDF & TEXT PARSING LOGIC ---
 def extract_text_from_pdf(file):
-    reader = PyPDF2.PdfReader(file)
     text = ""
-    for page in reader.pages:
-        text += page.extract_text() + " "
+    try:
+        # Try PyPDF2 first for selectable text
+        reader = PyPDF2.PdfReader(file)
+        for page in reader.pages:
+            text += page.extract_text() + " "
+    except Exception as e:
+        # Fallback to OCR if PyPDF2 fails or extracts no meaningful text
+        st.warning(f"PyPDF2 text extraction failed: {e}. Attempting OCR...")
+
+    # If PyPDF2 didn't yield much text, try OCR
+    if not text.strip():
+        try:
+            # Reset file pointer for pdf2image if it was read by PyPDF2
+            file.seek(0)
+            # Convert PDF to a list of images
+            images = convert_from_path(file.name) # Use file.name for path, assuming it's a temp file
+            for image in images:
+                text += pytesseract.image_to_string(image) + " "
+        except Exception as e:
+            st.error(f"OCR failed: {e}")
+            return ""
     return text
 
 def parse_extracted_text(text):
@@ -224,7 +247,7 @@ def parse_extracted_text(text):
 
         # Bulletproofing: Handle missing CSV columns
         section_text = re.sub(r',\s*,', ',0,', section_text)
-        section_text = re.sub(r'["[\]{}]', ' ', section_text)
+        section_text = re.sub(r'["[\\]{}\\]', ' ', section_text)
 
         # Process each line as a potential hourly record
         loc_data = []
@@ -295,7 +318,14 @@ with st.sidebar:
     uploaded_file = st.file_uploader("Upload PDF File", type=["pdf"])
     if uploaded_file is not None:
         try:
-            text = extract_text_from_pdf(uploaded_file)
+            # Save the uploaded file to a temporary location to pass its path to convert_from_path
+            with open("temp_uploaded.pdf", "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            
+            # Pass the temporary file object to extract_text_from_pdf
+            with open("temp_uploaded.pdf", "rb") as f:
+                text = extract_text_from_pdf(f)
+
             parsed_data = parse_extracted_text(text)
             if parsed_data:
                 st.session_state.aqi_data = parsed_data
