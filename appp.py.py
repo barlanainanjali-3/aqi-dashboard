@@ -226,42 +226,37 @@ def parse_extracted_text(text):
         section_text = re.sub(r',\s*,', ',0,', section_text)
         section_text = re.sub(r'["[\]{}]', ' ', section_text)
 
-        # Split by Date
-        splits = re.split(r'\d{4}\s*[-/]\s*\d{1,2}\s*[-/]\s*\d{1,2}', section_text)
+        # Process each line as a potential hourly record
         loc_data = []
+        # Find all lines that start with an hour (0-23) and contain at least 7 numbers
+        # This regex will look for a number (hour), potentially followed by more numbers (parameters)
+        records_found = re.findall(r'\b(\d{1,2})\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)?\s*([\d.]+)?\s*([\d.]+)?', section_text)
 
-        for k in range(1, len(splits)):
-            row_text = splits[k]
-            numbers = re.findall(r'-?\d+\.?\d*', row_text)
+        for record_tuple in records_found:
+            try:
+                # Convert relevant parts to float, handling potential missing values for PM25, O3, NH3
+                hour = int(record_tuple[0])
+                co = float(record_tuple[1])
+                no2 = float(record_tuple[2])
+                so2 = float(record_tuple[3])
+                pm10 = float(record_tuple[4])
 
-            if numbers and len(numbers) >= 7:
-                try:
-                    hour_float = float(numbers[0])
-                    hour = int(hour_float)
+                # Handle optional PM25, O3, NH3 values
+                # The regex captures up to 3 optional groups. We need to correctly assign them.
+                # Assuming order: hour, CO, NO2, SO2, PM10, PM25, O3, NH3
+                pm25 = float(record_tuple[5]) if record_tuple[5] else 0.0
+                o3 = float(record_tuple[6]) if record_tuple[6] else 0.0
+                nh3 = float(record_tuple[7]) if record_tuple[7] else 0.0
 
-                    if 0 <= hour <= 23 and hour_float == hour:
-                        co = float(numbers[1]) if len(numbers) > 1 else 0.0
-                        no2 = float(numbers[2]) if len(numbers) > 2 else 0.0
-                        so2 = float(numbers[3]) if len(numbers) > 3 else 0.0
-                        pm10 = float(numbers[4]) if len(numbers) > 4 else 0.0
-
-                        if len(numbers) == 7:
-                            pm25 = 0.0
-                            o3 = float(numbers[5])
-                            nh3 = float(numbers[6])
-                        else:
-                            pm25 = float(numbers[5]) if len(numbers) > 5 else 0.0
-                            o3 = float(numbers[6]) if len(numbers) > 6 else 0.0
-                            nh3 = float(numbers[7]) if len(numbers) > 7 else 0.0
-
-                        record = {
-                            "hour": hour, "CO": co, "NO2": no2, "SO2": so2,
-                            "PM10": pm10, "PM25": pm25, "O3": o3, "NH3": nh3
-                        }
-                        record["AQI"] = calculate_aqi_for_record(record)
-                        loc_data.append(record)
-                except ValueError:
-                    continue
+                record = {
+                    "hour": hour, "CO": co, "NO2": no2, "SO2": so2,
+                    "PM10": pm10, "PM25": pm25, "O3": o3, "NH3": nh3
+                }
+                record["AQI"] = calculate_aqi_for_record(record)
+                loc_data.append(record)
+            except ValueError:
+                # Skip lines that don't conform to the expected number format
+                continue
 
         if loc_data:
             # Filter duplicates by hour keeping the first one
@@ -306,7 +301,7 @@ with st.sidebar:
                 st.session_state.aqi_data = parsed_data
                 st.success(f"Successfully processed {uploaded_file.name}")
             else:
-                st.error("Could not extract valid data. Ensure it contains dates (YYYY-MM-DD) followed by hourly metrics.")
+                st.error("Could not extract valid data. Ensure it contains hourly metrics.")
         except Exception as e:
             st.error(f"Error processing PDF: {str(e)}")
 
