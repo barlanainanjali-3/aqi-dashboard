@@ -227,7 +227,7 @@ def parse_extracted_text(text):
         section_text = re.sub(r'["[\]{}]', ' ', section_text)
 
         # Split by Date
-        splits = re.split(r'\d{4}\s*-\s*\d{2}\s*-\s*\d{2}', section_text)
+        splits = re.split(r'\d{4}\s*-\s*\d{1,2}\s*-\s*\d{1,2}', section_text)
         loc_data = []
 
         for k in range(1, len(splits)):
