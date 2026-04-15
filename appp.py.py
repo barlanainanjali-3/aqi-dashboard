@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -211,7 +212,7 @@ def extract_text_from_pdf(file):
             # Reset file pointer for pdf2image if it was read by PyPDF2
             file.seek(0)
             # Convert PDF to a list of images
-            images = convert_from_path(file.name) # Use file.name for path, assuming it's a temp file
+            images = convert_from_path(file.name)
             for image in images:
                 text += pytesseract.image_to_string(image) + " "
         except Exception as e:
@@ -245,28 +246,35 @@ def parse_extracted_text(text):
 
         section_text = text[start_idx:end_idx]
 
-        # Bulletproofing: Handle missing CSV columns
+        # Bulletproofing: Handle missing CSV columns and problematic characters
         section_text = re.sub(r',\s*,', ',0,', section_text)
-        section_text = re.sub(r'["[\\]{}\\]', ' ', section_text)
+        section_text = re.sub(r'["[\\]{}\\ ]', ' ', section_text)
 
         # Process each line as a potential hourly record
         loc_data = []
-        # Find all lines that start with an hour (0-23) and contain at least 7 numbers
-        # This regex will look for a number (hour), potentially followed by more numbers (parameters)
-        records_found = re.findall(r'\b(\d{1,2})\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)?\s*([\d.]+)?\s*([\d.]+)?', section_text)
+        # Find all lines that start with an hour (0-23) and contain 7 parameters
+        # Hour (1-2 digits) followed by 7 parameters, with flexible non-numeric separators
+        record_line_pattern = (
+            r'\b(\d{1,2})' +  # Group 1: Hour (1 or 2 digits)
+            r'[^\d.-]+(-?\d+\.?\d*)' + # Group 2: CO
+            r'[^\d.-]+(-?\d+\.?\d*)' + # Group 3: NO2
+            r'[^\d.-]+(-?\d+\.?\d*)' + # Group 4: SO2
+            r'[^\d.-]+(-?\d+\.?\d*)' + # Group 5: PM10
+            r'(?:[^\d.-]+(-?\d+\.?\d*))?' * 3   # Groups 6, 7, 8 (optional): PM25, O3, NH3
+        )
+        records_found = re.findall(record_line_pattern, section_text)
 
         for record_tuple in records_found:
             try:
-                # Convert relevant parts to float, handling potential missing values for PM25, O3, NH3
+                # The groups from re.findall will be (hour, CO, NO2, SO2, PM10, PM25_val, O3_val, NH3_val)
+                # If an optional group (?:...) was not found, its capturing subgroup will be an empty string.
                 hour = int(record_tuple[0])
                 co = float(record_tuple[1])
                 no2 = float(record_tuple[2])
                 so2 = float(record_tuple[3])
                 pm10 = float(record_tuple[4])
-
-                # Handle optional PM25, O3, NH3 values
-                # The regex captures up to 3 optional groups. We need to correctly assign them.
-                # Assuming order: hour, CO, NO2, SO2, PM10, PM25, O3, NH3
+                
+                # Handle optional parameters. If the group was not found, it will be an empty string.
                 pm25 = float(record_tuple[5]) if record_tuple[5] else 0.0
                 o3 = float(record_tuple[6]) if record_tuple[6] else 0.0
                 nh3 = float(record_tuple[7]) if record_tuple[7] else 0.0
@@ -278,7 +286,7 @@ def parse_extracted_text(text):
                 record["AQI"] = calculate_aqi_for_record(record)
                 loc_data.append(record)
             except ValueError:
-                # Skip lines that don't conform to the expected number format
+                # Skip lines that don't conform to the expected number format after initial regex match
                 continue
 
         if loc_data:
@@ -410,6 +418,6 @@ if st.session_state.aqi_data:
             # Display chart
             st.plotly_chart(fig, use_container_width=True)
 
-            st.info("💡 **Understanding the Chart:** The bold red line calculates the overall **Air Quality Index (AQI)** based on CPCB standards. The dashed horizontal line at **100** represents the exceedance limit for satisfactory air quality. **To download this graph:** Hover over the top right corner of the chart and click the camera icon (📷 'Download plot as a png').")
+            st.info("💡 **Understanding the Chart:** The bold red line calculates the overall **Air Quality Index (AQI)の結果** based on CPCB standards. The dashed horizontal line at **100** represents the exceedance limit for satisfactory air quality. **To download this graph:** Hover over the top right corner of the chart and click the camera icon (📷 'Download plot as a png').")
 else:
     st.warning("No data available. Please upload a PDF or paste data in the sidebar.")
